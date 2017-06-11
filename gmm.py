@@ -1,22 +1,23 @@
 import sys
 import numpy as np
-from numpy.random import shuffle
+from numpy.random import permutation
 import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
+from matplotlib import colors as mcolors
 from sklearn.mixture import GaussianMixture
 plt.style.use('ggplot')
 
-np.random.seed(15)
+np.random.seed(42)
 np.seterr(all='raise')
 
 
 def create_data():
-    means = np.random.uniform(low=-5.0, high=5.0, size=(2,2))
-    stddevs = np.random.uniform(low=0.4, high=0.6, size=(2,2))
+    means = np.random.uniform(low=-4.0, high=4.0, size=(2,2))
+    stddevs = np.random.uniform(low=1.0, high=1.4, size=(2,2))
     data = []
     for mean, stddev in zip(means, stddevs):
-        data.extend(stddev**2 * np.random.randn(30, 2) + mean)
-    return np.asarray(data), means, stddevs
+        data.extend(stddev**2 * np.random.randn(20, 2) + mean)
+    return permutation(np.asarray(data)), means, stddevs
 
 
 def logg(x, m, s):
@@ -29,20 +30,24 @@ class MultiPlot():
         self.fig = plt.figure(figsize=(12,8,))    
         self.cnt_plot = 0
         self.shape = shape
+        self.colors = list(mcolors.BASE_COLORS.keys())
+        self.colors.remove('r')
+        self.len_colors = len(self.colors)
 
     def add_plot(self, data, text='time axis', means=None, stddevs=None):
         self.cnt_plot += 1
 
-        ax = self.fig.add_subplot(*self.shape, self.cnt_plot)
+        ax = self.fig.add_subplot(*self.shape, self.cnt_plot, aspect='equal')
         ax.set_xlim([-7, 7])
         ax.set_ylim([-7, 7])
         ax.set_xlabel(text)
 
-        ax.scatter(data[:,0], data[:,1], s=20, marker='x')    
+        ax.scatter(data[:,0], data[:,1], s=15, marker='x')    
         if means is not None:
-            for mean, stddev in zip(means, stddevs):
+            for i, (mean, stddev) in enumerate(zip(means, stddevs)):
                 s1, s2 = mean[0], mean[1]
-                ellipse = Ellipse(xy=(s1, s2,), width=stddev[0], height=stddev[1], color='b', fill=False, label='{s1:=1.2f},{s2:=1.2f}'.format(s1=s1, s2=s2))
+                color = self.colors[i % self.len_colors]
+                ellipse = Ellipse(xy=(s1, s2,), width=stddev[0], height=stddev[1], color=color, fill=False, label='{s1:=1.2f},{s2:=1.2f}'.format(s1=s1, s2=s2))
                 ax.add_patch(ellipse)
         ax.legend()
 
@@ -54,15 +59,31 @@ class GMM():
         self.stddevs = []
         self.c_k = np.asarray([1/k for _ in range(k)])
         self.dim = dim
-        num = np.abs(np.random.randn(1))
-        shuffle(data)
-        len_subset = len(data) // k
+
+        len_data = len(data)
+        len_subset = len_data // k
+        
+        means_init, stddevs_init = [], []
         for i in range(k):
             data_subset = data[i * len_subset: (i+1) * len_subset]
-            self.means.append(np.mean(data_subset, axis=0))
-            self.stddevs.append(np.diag(np.cov(data_subset, rowvar=False)))
-        self.means = np.asarray(self.means)
-        self.stddevs = np.asarray(self.stddevs)
+            means_init.append(np.mean(data_subset, axis=0))
+            stddevs_init.append(np.std(data_subset, axis=0))
+        for iter in range(3):
+            data_clusters = [[] for _ in range(k)]
+            for sample in data:
+                diffs = []
+                for mean in means_init:
+                    diffs.append(np.sum((sample - mean) ** 2) ** 0.5)
+                data_clusters[np.argmax(diffs)].append(sample)
+            for i in range(k):
+                data_cluster = data_clusters[i]
+                if data_cluster:
+                    means_init[i] = np.mean(data_cluster, axis=0)
+                    if iter == 2:
+                        stddevs_init[i] = np.std(data_cluster, axis=0)
+
+        self.means = np.asarray(means_init)
+        self.stddevs = np.asarray(stddevs_init)
 
     def trainlog(self, data):
         resp = np.empty((len(data), len(self.c_k)))  # responsibilities. Shape (sample, cluster)
@@ -71,57 +92,58 @@ class GMM():
                 sample_r = np.log(self.c_k[i])
                 for j in range(self.dim):
                     sample_r += logg(sample[j], mean[j], stddev[j])
-                sample_r = -80.0 if sample_r < -80.0 else sample_r
-                resp[n][i] = sample_r
-            sum_r = np.sum(resp[n])
+                if sample_r < -60.0:
+                    sample_r = -60.0
+                elif sample_r >= -1e-5:
+                    sample_r = -1e-5
+
+                resp[n, i] = sample_r
+            sum_r = np.log(np.sum(np.exp(resp[n])))  # resp[n] contains log(a); log(b), we need log(a + b)
             resp[n] -= sum_r
         resp = np.exp(resp)
         R = np.sum(resp, axis=0)
-        # Transposes for division across row (default is column).
-        self.means = ((resp.T@data).T / R).T  
+        self.means = ((resp.T@data).T / R).T  # Transposes for division along row (cluster) (default is column).
 
         sum_R = np.sum(R)
+
         for i, mean in enumerate(self.means):
             diff = data - mean
-            if np.sum(self.stddevs) > 0.01:
+            if np.sum(self.stddevs[i]) > 0.01:
                 self.stddevs[i] = np.sqrt(resp[:, i].dot(np.square(diff)) / R[i])
             self.c_k[i] = R[i]/sum_R
             
 def main():
     iters = 7
 
-    data, means, stddevs = create_data()
+    data, _, _ = create_data()
     gmm = GMM(2, 2, data=data)
-    #gmm.means, gmm.stddevs = means, stddevs
 
     m, s, c_ks = np.copy(gmm.means), np.copy(gmm.stddevs), np.copy(gmm.c_k)
     mul_plot = MultiPlot((2, 4,))
     mul_plot.add_plot(data, text='t=0', means=m, stddevs=s)
-    for i in range(5*iters):
+    for i in range(iters):
         gmm.trainlog(data)
         nm, ns = np.copy(gmm.means), np.copy(gmm.stddevs)
-        if i % 5 == 0:
-            mul_plot.add_plot(data, text='t={}'.format(i+1), means=nm, stddevs=ns)
+        mul_plot.add_plot(data, text='t={}'.format(i+1), means=nm, stddevs=ns)
 
-    gmm2 = GaussianMixture(2, covariance_type='diag', reg_covar=1e-6, weights_init=c_ks, means_init=m, precisions_init=1.0/s)
-    precs = gmm2.precisions_init
-    means, stddevs = np.copy(gmm2.means_init), 1.0/precs
+    try:
+        get_prec = lambda x: [np.diag(np.linalg.inv(np.diag(v))) for v in np.square(x)]
+        get_stddev = lambda x: [np.diag(np.sqrt(np.linalg.inv(np.diag(p)))) for p in x]
+        gmm2 = GaussianMixture(2, covariance_type='diag', weights_init=c_ks, means_init=m, precisions_init=get_prec(s))
+        means, stddevs = np.copy(gmm2.means_init), get_stddev(gmm2.precisions_init)
 
-    mul_plot2 = MultiPlot((1, 2,))
-    mul_plot2.add_plot(data, text='t=0', means=means, stddevs=stddevs)
+        mul_plot2 = MultiPlot((1, 2,))
+        mul_plot2.add_plot(data, text='t=0', means=means, stddevs=stddevs)
     
-    gmm2.fit(data)
+        gmm2.fit(data)
 
-    means, stddevs = np.copy(gmm2.means_), np.copy(gmm2.covariances_)
-    mul_plot2.add_plot(data, text='t=1', means=means, stddevs=stddevs)    
+        means, stddevs = np.copy(gmm2.means_), np.sqrt(np.copy(gmm2.covariances_))
+        mul_plot2.add_plot(data, text='t=1', means=means, stddevs=stddevs)    
+    except Exception as e:
+        print('Scipy failed: %s' % e)
 
     plt.tight_layout()
     plt.show()
 
     
 main()
-
-
-
-
-
