@@ -4,7 +4,6 @@ from numpy.random import permutation
 import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
 from matplotlib import colors as mcolors
-from sklearn.mixture import GaussianMixture
 plt.style.use('ggplot')
 
 np.random.seed(42)
@@ -125,22 +124,6 @@ def main():
         gmm.trainlog(data)
         nm, ns = np.copy(gmm.means), np.copy(gmm.stddevs)
         mul_plot.add_plot(data, text='t={}'.format(i+1), means=nm, stddevs=ns)
-
-    try:
-        get_prec = lambda x: [np.diag(np.linalg.inv(np.diag(v))) for v in np.square(x)]
-        get_stddev = lambda x: [np.diag(np.sqrt(np.linalg.inv(np.diag(p)))) for p in x]
-        gmm2 = GaussianMixture(2, covariance_type='diag', weights_init=c_ks, means_init=m, precisions_init=get_prec(s))
-        means, stddevs = np.copy(gmm2.means_init), get_stddev(gmm2.precisions_init)
-
-        mul_plot2 = MultiPlot((1, 2,))
-        mul_plot2.add_plot(data, text='t=0', means=means, stddevs=stddevs)
-    
-        gmm2.fit(data)
-
-        means, stddevs = np.copy(gmm2.means_), np.sqrt(np.copy(gmm2.covariances_))
-        mul_plot2.add_plot(data, text='t=1', means=means, stddevs=stddevs)    
-    except Exception as e:
-        print('Scipy failed: %s' % e)
 
     plt.tight_layout()
     plt.show()
