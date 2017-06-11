@@ -1,5 +1,7 @@
 # gmm
 
+![4 component GMM on 4 clusters with kmeans init](http://i.imgur.com/6sMu8dl.png)
+
 This took a lot more effort than expected. See commit history for version that includes a reference 
 sklearn GMM (which is also plotted for comparison). Refer to [wiki](https://en.wikipedia.org/wiki/Mixture_model#Expectation_maximization_.28EM.29) or David Mackay's book for formula explanation.
 
