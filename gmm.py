@@ -73,7 +73,7 @@ class GMM():
                 diffs = []
                 for mean in means_init:
                     diffs.append(np.sum((sample - mean) ** 2) ** 0.5)
-                data_clusters[np.argmax(diffs)].append(sample)
+                data_clusters[np.argmin(diffs)].append(sample)
             for i in range(k):
                 data_cluster = data_clusters[i]
                 if data_cluster:
